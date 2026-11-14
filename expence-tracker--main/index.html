@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClearLedger — Expense &amp; Budget Tracker</title>
+    <meta
+      name="description"
+      content="A minimalist personal finance and expense tracker featuring live dashboard metrics, transaction management, category analytics, and monthly budget alerts."
+    />
+    <meta property="og:title" content="ClearLedger — Expense & Budget Tracker" />
+    <meta
+      property="og:description"
+      content="A minimalist personal finance and expense tracker featuring live dashboard metrics, transaction management, category analytics, and monthly budget alerts."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="./assets/logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- Mobile Drawer Backdrop -->
+      <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+      <!-- Sidebar Navigation -->
+      <aside id="sidebar" class="sidebar" aria-label="Primary Navigation">
+        <div class="sidebar-brand">
+          <a href="#dashboard" class="brand-link" data-nav="dashboard">
+            <img src="./assets/logo.svg" alt="ClearLedger logo" class="brand-mark" width="28" height="28" />
+            <span class="brand-name">ClearLedger</span>
+          </a>
+          <button
+            type="button"
+            id="sidebar-close-btn"
+            class="icon-btn mobile-only"
+            aria-label="Close navigation menu"
+          >
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Workspace sections">
+          <button type="button" class="nav-item is-active" data-nav="dashboard" aria-current="page">
+            <i data-lucide="layout-dashboard" aria-hidden="true"></i>
+            <span>Dashboard</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="transactions">
+            <i data-lucide="arrow-left-right" aria-hidden="true"></i>
+            <span>Transactions</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="analytics">
+            <i data-lucide="bar-chart-3" aria-hidden="true"></i>
+            <span>Analytics</span>
+          </button>
+          <button type="button" class="nav-item" data-nav="budget">
+            <i data-lucide="wallet" aria-hidden="true"></i>
+            <span>Budget</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="sidebar-budget-mini" id="sidebar-budget-summary">
+            <div class="sidebar-mini-header">
+              <span class="sidebar-mini-label">Monthly Budget</span>
+              <span class="sidebar-mini-pct tabular-nums" id="sidebar-budget-pct">0%</span>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-fill" id="sidebar-budget-bar" style="width: 0%"></div>
+            </div>
+            <div class="sidebar-mini-meta tabular-nums" id="sidebar-budget-meta">
+              No budget configured
+            </div>
+          </div>
+
+          <div class="sidebar-actions">
+            <button type="button" id="open-quick-add-sidebar" class="btn btn-secondary btn-full">
+              <i data-lucide="plus" aria-hidden="true"></i>
+              <span>Record Entry</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Workspace -->
+      <div class="workspace">
+        <!-- Top Navigation Bar -->
+        <header class="topbar">
+          <div class="topbar-left">
+            <button
+              type="button"
+              id="sidebar-open-btn"
+              class="icon-btn mobile-only"
+              aria-label="Open navigation menu"
+            >
+              <i data-lucide="menu" aria-hidden="true"></i>
+            </button>
+            <div class="topbar-title-group">
+              <span class="topbar-breadcrumb">ClearLedger</span>
+              <span class="topbar-sep" aria-hidden="true">/</span>
+              <h1 id="topbar-view-title" class="topbar-title">Dashboard</h1>
+            </div>
+          </div>
+
+          <div class="topbar-right">
+            <div class="topbar-month-control">
+              <label for="global-month-select" class="sr-only">Active reporting month</label>
+              <select id="global-month-select" class="select-compact" aria-label="Reporting month"></select>
+            </div>
+            <button type="button" id="topbar-add-btn" class="btn btn-primary">
+              <i data-lucide="plus" aria-hidden="true"></i>
+              <span>Add Transaction</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Main Viewport -->
+        <main class="main-content" id="main-content">
+          <!-- View 1: Dashboard -->
+          <section id="view-dashboard" class="view-section is-active" aria-labelledby="topbar-view-title"></section>
+
+          <!-- View 2: Transactions -->
+          <section id="view-transactions" class="view-section" hidden aria-label="Transaction History"></section>
+
+          <!-- View 3: Analytics -->
+          <section id="view-analytics" class="view-section" hidden aria-label="Expense Analytics"></section>
+
+          <!-- View 4: Budget -->
+          <section id="view-budget" class="view-section" hidden aria-label="Budget Management"></section>
+        </main>
+      </div>
+    </div>
+
+    <!-- Add / Edit Transaction Modal -->
+    <div
+      id="transaction-modal"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="transaction-modal-title"
+      hidden
+    >
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h2 id="transaction-modal-title" class="modal-title">Add Transaction</h2>
+          <button type="button" class="icon-btn" id="transaction-modal-close" aria-label="Close modal">
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form id="transaction-form" class="modal-body" novalidate>
+          <input type="hidden" id="tx-id" name="id" value="" />
+
+          <div class="form-group">
+            <span class="form-label">Transaction Type</span>
+            <div class="segmented-control" role="group" aria-label="Transaction type">
+              <button
+                type="button"
+                class="segmented-btn is-active"
+                data-tx-type="expense"
+                id="tx-type-expense"
+              >
+                Expense
+              </button>
+              <button
+                type="button"
+                class="segmented-btn"
+                data-tx-type="income"
+                id="tx-type-income"
+              >
+                Income
+              </button>
+            </div>
+            <input type="hidden" id="tx-type" name="type" value="expense" />
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label for="tx-title" class="form-label">
+                Title <span class="required-mark" aria-hidden="true">*</span>
+              </label>
+              <input
+                type="text"
+                id="tx-title"
+                name="title"
+                class="form-input"
+                placeholder="e.g., Grocery Shopping"
+                maxlength="80"
+                required
+              />
+              <p class="form-error" id="error-tx-title" role="alert"></p>
+            </div>
+
+            <div class="form-group">
+              <label for="tx-amount" class="form-label">
+                Amount <span class="required-mark" aria-hidden="true">*</span>
+              </label>
+              <div class="input-with-prefix">
+                <span class="input-prefix" id="tx-currency-prefix">$</span>
+                <input
+                  type="number"
+                  id="tx-amount"
+                  name="amount"
+                  class="form-input has-prefix tabular-nums"
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0.01"
+                  required
+                />
+              </div>
+              <p class="form-error" id="error-tx-amount" role="alert"></p>
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label for="tx-category" class="form-label">
+                Category <span class="required-mark" aria-hidden="true">*</span>
+              </label>
+              <select id="tx-category" name="category" class="form-select" required></select>
+              <p class="form-error" id="error-tx-category" role="alert"></p>
+            </div>
+
+            <div class="form-group">
+              <label for="tx-date" class="form-label">
+                Date <span class="required-mark" aria-hidden="true">*</span>
+              </label>
+              <input type="date" id="tx-date" name="date" class="form-input tabular-nums" required />
+              <p class="form-error" id="error-tx-date" role="alert"></p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="tx-description" class="form-label">Description</label>
+            <textarea
+              id="tx-description"
+              name="description"
+              class="form-textarea"
+              rows="2"
+              maxlength="240"
+              placeholder="Optional notes (e.g., Weekly groceries at market)"
+            ></textarea>
+            <p class="form-error" id="error-tx-description" role="alert"></p>
+          </div>
+
+          <!-- Smart Budget Pre-Transaction Impact Alert -->
+          <div
+            id="tx-budget-impact-banner"
+            class="status-banner is-warning"
+            style="display: none; margin-top: 8px; margin-bottom: 4px;"
+            role="status"
+          >
+            <div class="status-banner-content">
+              <i id="tx-budget-impact-icon" data-lucide="alert-triangle" aria-hidden="true"></i>
+              <div>
+                <div class="status-banner-title" id="tx-budget-impact-title">Budget Alert</div>
+                <div class="status-banner-desc" id="tx-budget-impact-desc"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="transaction-modal-cancel">
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary" id="transaction-submit-btn">
+              Save Transaction
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Confirmation Dialog Modal -->
+    <div
+      id="confirm-modal"
+      class="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      hidden
+    >
+      <div class="modal-panel modal-panel-sm">
+        <div class="modal-header">
+          <h2 id="confirm-modal-title" class="modal-title">Confirm Action</h2>
+          <button type="button" class="icon-btn" id="confirm-modal-close" aria-label="Close dialog">
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="confirm-modal-message" class="confirm-message"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="confirm-modal-cancel">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirm-modal-confirm">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <!-- CDN Libraries (Chart.js & Lucide Icons) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+
+    <!-- Modular Application Entry Point -->
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "ClearLedger — Expense & Budget Tracker",
+  "description": "A minimalist personal finance and expense tracker featuring live dashboard metrics, transaction management, category analytics, and monthly budget alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
