@@ -3,8 +3,10 @@ const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const backendRoot = path.resolve(__dirname, '..', '..');
-const dbRelativePath = process.env.DB_PATH || 'database/expense-tracker.db';
-const dbFullPath = path.resolve(backendRoot, dbRelativePath);
+const isVercel = Boolean(process.env.VERCEL);
+const dbFullPath = isVercel
+  ? '/tmp/expense-tracker.db'
+  : path.resolve(backendRoot, process.env.DB_PATH || 'database/expense-tracker.db');
 
 // Ensure the directory for the database file exists
 fs.mkdirSync(path.dirname(dbFullPath), { recursive: true });
