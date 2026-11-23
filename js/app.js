@@ -3,6 +3,7 @@
  * ---------------------------------------------------------------------------
  * Application controller: coordinates view routing, global state, reporting
  * month selection, modal dialogs, sidebar responsiveness, and toast feedback.
+ * Backed by REST API calls to the Node.js + Express + SQLite backend.
  */
 
 import {
@@ -53,7 +54,7 @@ let txModal = null;
 let confirmActionCallback = null;
 
 /* ==========================================================================
-   Toast & Confirmation Dialog Helpers
+   Toast, Error Banner & Loading State Helpers
    ========================================================================== */
 
 function showToast(message, variant = 'default') {
@@ -75,6 +76,60 @@ function showToast(message, variant = 'default') {
     toast.style.transition = 'opacity 150ms ease, transform 150ms ease';
     window.setTimeout(() => toast.remove(), 160);
   }, 2800);
+}
+
+function showErrorBanner(message) {
+  let banner = document.getElementById('backend-error-banner');
+  const mainContent = document.getElementById('main-content');
+  if (!banner && mainContent) {
+    banner = document.createElement('div');
+    banner.id = 'backend-error-banner';
+    banner.className = 'status-banner is-danger';
+    banner.setAttribute('role', 'alert');
+    banner.style.margin = '0 0 20px 0';
+    mainContent.prepend(banner);
+  }
+
+  if (banner) {
+    banner.innerHTML = `
+      <div class="status-banner-content">
+        <i data-lucide="alert-octagon" aria-hidden="true"></i>
+        <div>
+          <div class="status-banner-title">Backend Connection Error</div>
+          <div class="status-banner-desc">${escapeHtml(message)}</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="retry-backend-btn">Retry</button>
+    `;
+    banner.hidden = false;
+    document.getElementById('retry-backend-btn')?.addEventListener('click', () => {
+      renderCurrentView();
+    });
+    refreshIcons();
+  }
+}
+
+function hideErrorBanner() {
+  const banner = document.getElementById('backend-error-banner');
+  if (banner) {
+    banner.hidden = true;
+  }
+}
+
+function showLoadingIndicator() {
+  const activeSec = document.getElementById(`view-${state.activeView}`);
+  if (activeSec && !activeSec.innerHTML.trim()) {
+    activeSec.innerHTML = `
+      <div class="empty-state" style="padding: 60px 24px;">
+        <div class="empty-state-icon">
+          <i data-lucide="refresh-cw" aria-hidden="true"></i>
+        </div>
+        <div class="empty-state-title">Loading Ledger Data...</div>
+        <div class="empty-state-desc">Connecting to backend database</div>
+      </div>
+    `;
+    refreshIcons();
+  }
 }
 
 function openConfirmModal({ title, message, confirmLabel = 'Confirm', onConfirm }) {
@@ -133,8 +188,7 @@ function populateMonthSelector(transactions) {
   select.innerHTML = sortedMonths
     .map(
       (key) =>
-        `<option value="${escapeHtml(key)}" ${
-          key === state.activeMonth ? 'selected' : ''
+        `<option value="${escapeHtml(key)}" ${key === state.activeMonth ? 'selected' : ''
         }>${escapeHtml(formatMonthLabel(key))}</option>`
     )
     .join('');
@@ -158,13 +212,12 @@ function updateSidebarBudgetSummary(transactions, budgetConfig) {
   const clamped = Math.min(100, Math.max(0, status.utilizationPct)).toFixed(1);
   pctEl.textContent = `${status.utilizationPct.toFixed(0)}%`;
   barEl.style.width = `${clamped}%`;
-  barEl.className = `progress-fill ${
-    status.status === 'exceeded'
+  barEl.className = `progress-fill ${status.status === 'exceeded'
       ? 'is-danger'
       : status.status === 'warning'
-      ? 'is-warning'
-      : ''
-  }`;
+        ? 'is-warning'
+        : ''
+    }`;
 
   metaEl.textContent = `${formatCurrency(status.monthlySpent)} of ${formatCurrency(
     status.monthlyLimit
@@ -204,7 +257,7 @@ function setActiveView(viewName) {
   renderCurrentView();
 }
 
-function renderCurrentView(options = {}) {
+async function renderCurrentView(options = {}) {
   const { preserveSearchFocus = false } = options;
 
   let searchSelectionStart = null;
@@ -214,8 +267,26 @@ function renderCurrentView(options = {}) {
     searchSelectionEnd = document.activeElement.selectionEnd;
   }
 
-  const transactions = getTransactions();
-  const budgetConfig = getBudget();
+  showLoadingIndicator();
+
+  let transactions = [];
+  let budgetConfig = { monthlyLimit: 0, categoryLimits: {} };
+
+  try {
+    const [txData, bData] = await Promise.all([
+      getTransactions(),
+      getBudget(state.activeMonth),
+    ]);
+    transactions = txData;
+    budgetConfig = bData;
+    state.cachedTransactions = txData;
+    state.cachedBudget = bData;
+    hideErrorBanner();
+  } catch (err) {
+    console.error('Error fetching data from API:', err);
+    showErrorBanner(err.message || 'Could not connect to backend server');
+    return;
+  }
 
   populateMonthSelector(transactions);
   updateSidebarBudgetSummary(transactions, budgetConfig);
@@ -227,106 +298,132 @@ function renderCurrentView(options = {}) {
     destroyAnalyticsCharts();
   }
 
-  if (state.activeView === 'dashboard') {
-    const container = document.getElementById('view-dashboard');
-    renderDashboardView(container, transactions, budgetConfig, state.activeMonth, {
-      onNavigate: (target) => setActiveView(target),
-      onAddClick: () => txModal.open(null),
-      onEditClick: (id) => {
-        const tx = transactions.find((item) => item.id === id);
-        if (tx) txModal.open(tx);
-      },
-    });
-  } else if (state.activeView === 'transactions') {
-    const container = document.getElementById('view-transactions');
-    renderTransactionsView(container, transactions, state, {
-      onFilterChange: (patch) => {
-        const isSearchUpdate = 'search' in patch && Object.keys(patch).length === 1;
-        state.filters = { ...state.filters, ...patch };
-        renderCurrentView({ preserveSearchFocus: isSearchUpdate });
-      },
-      onAddClick: () => txModal.open(null),
-      onEditClick: (id) => {
-        const tx = transactions.find((item) => item.id === id);
-        if (tx) txModal.open(tx);
-      },
-      onDeleteClick: (id) => {
-        const tx = transactions.find((item) => item.id === id);
-        if (!tx) return;
-        openConfirmModal({
-          title: 'Delete Transaction',
-          message: `Remove "${tx.title}" (${formatCurrency(
-            tx.amount
-          )}) from your transaction history? This action cannot be undone.`,
-          confirmLabel: 'Delete Transaction',
-          onConfirm: () => {
-            deleteTransaction(id);
-            showToast('Transaction deleted');
-            renderCurrentView();
-          },
-        });
-      },
-    });
+  try {
+    if (state.activeView === 'dashboard') {
+      const container = document.getElementById('view-dashboard');
+      renderDashboardView(container, transactions, budgetConfig, state.activeMonth, {
+        onNavigate: (target) => setActiveView(target),
+        onAddClick: () => txModal.open(null),
+        onEditClick: (id) => {
+          const tx = transactions.find((item) => String(item.id) === String(id));
+          if (tx) txModal.open(tx);
+        },
+      });
+    } else if (state.activeView === 'transactions') {
+      const container = document.getElementById('view-transactions');
+      renderTransactionsView(container, transactions, state, {
+        onFilterChange: (patch) => {
+          const isSearchUpdate = 'search' in patch && Object.keys(patch).length === 1;
+          state.filters = { ...state.filters, ...patch };
+          renderCurrentView({ preserveSearchFocus: isSearchUpdate });
+        },
+        onAddClick: () => txModal.open(null),
+        onEditClick: (id) => {
+          const tx = transactions.find((item) => String(item.id) === String(id));
+          if (tx) txModal.open(tx);
+        },
+        onDeleteClick: (id) => {
+          const tx = transactions.find((item) => String(item.id) === String(id));
+          if (!tx) return;
+          openConfirmModal({
+            title: 'Delete Transaction',
+            message: `Remove "${tx.title}" (${formatCurrency(
+              tx.amount
+            )}) from your transaction history? This action cannot be undone.`,
+            confirmLabel: 'Delete Transaction',
+            onConfirm: async () => {
+              try {
+                await deleteTransaction(id);
+                showToast('Transaction deleted');
+                await renderCurrentView();
+              } catch (err) {
+                showToast(err.message, 'error');
+              }
+            },
+          });
+        },
+      });
 
-    if (preserveSearchFocus) {
-      const searchEl = document.getElementById('tx-search-input');
-      if (searchEl) {
-        searchEl.focus();
-        if (searchSelectionStart !== null) {
-          searchEl.setSelectionRange(searchSelectionStart, searchSelectionEnd);
+      if (preserveSearchFocus) {
+        const searchEl = document.getElementById('tx-search-input');
+        if (searchEl) {
+          searchEl.focus();
+          if (searchSelectionStart !== null) {
+            searchEl.setSelectionRange(searchSelectionStart, searchSelectionEnd);
+          }
         }
       }
+    } else if (state.activeView === 'analytics') {
+      const container = document.getElementById('view-analytics');
+      renderAnalyticsView(container, transactions, state, {
+        onPeriodChange: (period) => {
+          state.analyticsPeriod = period;
+          renderCurrentView();
+        },
+        onAddClick: () => txModal.open(null),
+      });
+    } else if (state.activeView === 'budget') {
+      const container = document.getElementById('view-budget');
+      renderBudgetView(container, transactions, budgetConfig, state.activeMonth, {
+        onSaveMonthlyBudget: async (monthlyLimit) => {
+          try {
+            await saveBudget({ monthlyLimit }, state.activeMonth);
+            showToast('Monthly budget updated');
+            await renderCurrentView();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        },
+        onSaveCategoryBudgets: async (categoryLimits) => {
+          try {
+            await saveBudget({ categoryLimits }, state.activeMonth);
+            showToast('Category limits saved');
+            await renderCurrentView();
+          } catch (err) {
+            showToast(err.message, 'error');
+          }
+        },
+        onResetSampleData: () => {
+          openConfirmModal({
+            title: 'Load Sample Data',
+            message:
+              'Replace your current ledger with sample transactions and default monthly budget limits?',
+            confirmLabel: 'Load Sample Data',
+            onConfirm: async () => {
+              try {
+                await resetToSampleData();
+                state.activeMonth = getCurrentMonthKey();
+                showToast('Sample ledger data loaded');
+                await renderCurrentView();
+              } catch (err) {
+                showToast(err.message, 'error');
+              }
+            },
+          });
+        },
+        onClearAllData: () => {
+          openConfirmModal({
+            title: 'Clear All Data',
+            message:
+              'Delete all transactions and reset monthly budget targets to zero? This cannot be undone.',
+            confirmLabel: 'Clear All Data',
+            onConfirm: async () => {
+              try {
+                await clearAllData(state.activeMonth);
+                showToast('All ledger data cleared');
+                await renderCurrentView();
+              } catch (err) {
+                showToast(err.message, 'error');
+              }
+            },
+          });
+        },
+      });
     }
-  } else if (state.activeView === 'analytics') {
-    const container = document.getElementById('view-analytics');
-    renderAnalyticsView(container, transactions, state, {
-      onPeriodChange: (period) => {
-        state.analyticsPeriod = period;
-        renderCurrentView();
-      },
-      onAddClick: () => txModal.open(null),
-    });
-  } else if (state.activeView === 'budget') {
-    const container = document.getElementById('view-budget');
-    renderBudgetView(container, transactions, budgetConfig, state.activeMonth, {
-      onSaveMonthlyBudget: (monthlyLimit) => {
-        saveBudget({ monthlyLimit });
-        showToast('Monthly budget updated');
-        renderCurrentView();
-      },
-      onSaveCategoryBudgets: (categoryLimits) => {
-        saveBudget({ categoryLimits });
-        showToast('Category limits saved');
-        renderCurrentView();
-      },
-      onResetSampleData: () => {
-        openConfirmModal({
-          title: 'Load Sample Data',
-          message:
-            'Replace your current ledger with sample transactions and default monthly budget limits?',
-          confirmLabel: 'Load Sample Data',
-          onConfirm: () => {
-            resetToSampleData();
-            state.activeMonth = getCurrentMonthKey();
-            showToast('Sample ledger data loaded');
-            renderCurrentView();
-          },
-        });
-      },
-      onClearAllData: () => {
-        openConfirmModal({
-          title: 'Clear All Data',
-          message:
-            'Delete all transactions and reset monthly budget targets to zero? This cannot be undone.',
-          confirmLabel: 'Clear All Data',
-          onConfirm: () => {
-            clearAllData();
-            showToast('All ledger data cleared');
-            renderCurrentView();
-          },
-        });
-      },
-    });
+  } catch (renderErr) {
+    console.error('Error rendering active view:', renderErr);
+    showErrorBanner(`Rendering error: ${renderErr.message}`);
+    return;
   }
 
   refreshIcons();
@@ -350,25 +447,32 @@ function closeMobileSidebar() {
    Application Bootstrap
    ========================================================================== */
 
-function initApp() {
-  initializeStorage();
-
-  // Initialize Add / Edit Transaction Modal
-  txModal = createTransactionModalController((payload) => {
-    if (payload.id) {
-      updateTransaction(payload.id, payload);
-      showToast('Transaction updated');
-    } else {
-      const saved = saveTransaction(payload);
-      // Automatically switch activeMonth if user records an entry for a different month
-      const txMonth = getMonthKey(saved.date);
-      if (txMonth && state.activeView === 'dashboard') {
-        state.activeMonth = txMonth;
+async function initApp() {
+  // Initialize Add / Edit Transaction Modal with Smart Budget Alert Context
+  txModal = createTransactionModalController(
+    async (payload) => {
+      try {
+        if (payload.id) {
+          await updateTransaction(payload.id, payload);
+          showToast('Transaction updated');
+        } else {
+          const saved = await saveTransaction(payload);
+          const txMonth = getMonthKey(saved.date);
+          if (txMonth && state.activeView === 'dashboard') {
+            state.activeMonth = txMonth;
+          }
+          showToast(`${saved.type === 'income' ? 'Income' : 'Expense'} recorded`);
+        }
+        await renderCurrentView();
+      } catch (err) {
+        showToast(err.message, 'error');
       }
-      showToast(`${saved.type === 'income' ? 'Income' : 'Expense'} recorded`);
-    }
-    renderCurrentView();
-  });
+    },
+    () => ({
+      transactions: state.cachedTransactions || [],
+      budgetConfig: state.cachedBudget || { monthlyLimit: 0, categoryLimits: {} },
+    })
+  );
 
   // Sidebar navigation links
   document.querySelectorAll('[data-nav]').forEach((el) => {
@@ -424,6 +528,16 @@ function initApp() {
       closeMobileSidebar();
     }
   });
+
+  // Check and execute one-time migration from LocalStorage if present
+  try {
+    const migrationResult = await initializeStorage();
+    if (migrationResult && migrationResult.migrated && migrationResult.count > 0) {
+      showToast(`Imported ${migrationResult.count} records from local backup`);
+    }
+  } catch (mErr) {
+    console.warn('Migration check error:', mErr);
+  }
 
   // Initial render
   setActiveView('dashboard');

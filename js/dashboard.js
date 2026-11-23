@@ -136,7 +136,7 @@ export function getRecentTransactions(transactions, limit = 6) {
   return [...transactions]
     .sort((a, b) => {
       const cmp = b.date.localeCompare(a.date);
-      return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
+      return cmp !== 0 ? cmp : String(b.id).localeCompare(String(a.id));
     })
     .slice(0, limit);
 }

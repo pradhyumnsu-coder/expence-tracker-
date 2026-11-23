@@ -69,6 +69,105 @@ export function calculateBudgetStatus(transactions, budgetConfig, monthKey) {
     };
   }).filter((item) => item.limit > 0 || item.spent > 0);
 
+  // --- Smart Velocity and Forecasting ---
+  let dailyBurnRate = 0;
+  let projectedSpend = monthlySpent;
+  let safeDailyAllowance = 0;
+  let isCurrentMonth = false;
+  let currentDay = 1;
+  let daysInMonth = 30;
+  let remainingDays = 1;
+
+  if (monthKey && /^\d{4}-\d{2}$/.test(monthKey)) {
+    const [y, m] = monthKey.split('-').map(Number);
+    const now = new Date();
+    isCurrentMonth = now.getFullYear() === y && now.getMonth() + 1 === m;
+    daysInMonth = new Date(y, m, 0).getDate();
+    currentDay = isCurrentMonth ? Math.min(now.getDate(), daysInMonth) : daysInMonth;
+    remainingDays = Math.max(1, daysInMonth - currentDay);
+
+    dailyBurnRate = currentDay > 0 ? monthlySpent / currentDay : 0;
+    projectedSpend = currentDay > 0 ? dailyBurnRate * daysInMonth : monthlySpent;
+    safeDailyAllowance = remaining > 0 ? remaining / remainingDays : 0;
+  }
+
+  // --- Build Structured Smart Alerts ---
+  const smartAlerts = [];
+
+  // 1. Overall monthly budget exceeded or warning
+  if (status === 'exceeded') {
+    smartAlerts.push({
+      id: 'monthly-exceeded',
+      severity: 'danger',
+      icon: 'alert-octagon',
+      title: `Monthly Budget Exceeded (${utilizationPct.toFixed(1)}% used)`,
+      desc: `Spending of ${formatCurrency(monthlySpent)} has exceeded your ${formatCurrency(
+        monthlyLimit
+      )} budget by ${formatCurrency(Math.abs(remaining))}.`,
+    });
+  } else if (status === 'warning') {
+    smartAlerts.push({
+      id: 'monthly-warning',
+      severity: 'warning',
+      icon: 'alert-triangle',
+      title: `Approaching Monthly Budget Limit (${utilizationPct.toFixed(1)}% used)`,
+      desc: `You have spent ${formatCurrency(monthlySpent)} of your ${formatCurrency(
+        monthlyLimit
+      )} budget. ${formatCurrency(remaining)} remains for ${formatMonthLabel(monthKey)}.`,
+    });
+  }
+
+  // 2. Spending Velocity Pacing Alert
+  if (isCurrentMonth && monthlyLimit > 0 && currentDay >= 2 && status !== 'exceeded') {
+    const projectedOver = projectedSpend - monthlyLimit;
+    if (projectedOver > 0) {
+      const exceedDay = Math.min(
+        daysInMonth,
+        Math.max(1, Math.floor(monthlyLimit / Math.max(0.01, dailyBurnRate)))
+      );
+      smartAlerts.push({
+        id: 'spending-velocity',
+        severity: 'warning',
+        icon: 'trending-up',
+        title: `High Spending Pace Detected (${formatCurrency(dailyBurnRate)}/day)`,
+        desc: `At your current pace, you are projected to reach ${formatCurrency(
+          projectedSpend
+        )} by month-end, exceeding your budget around Day ${exceedDay}. Safe spending allowance: ${formatCurrency(
+          safeDailyAllowance
+        )}/day.`,
+      });
+    }
+  }
+
+  // 3. Category Breaches
+  const exceededCategories = categoryTrackers.filter((t) => t.status === 'exceeded');
+  const warningCategories = categoryTrackers.filter((t) => t.status === 'warning');
+
+  if (exceededCategories.length > 0) {
+    const names = exceededCategories.map((c) => c.category).join(', ');
+    const first = exceededCategories[0];
+    smartAlerts.push({
+      id: 'category-exceeded',
+      severity: 'danger',
+      icon: 'alert-circle',
+      title: `Category Budget Exceeded: ${names}`,
+      desc: `${first.category} spending (${formatCurrency(first.spent)}) has exceeded its ${formatCurrency(
+        first.limit
+      )} limit by ${formatCurrency(Math.abs(first.remaining))}.`,
+    });
+  } else if (warningCategories.length > 0 && status !== 'warning' && status !== 'exceeded') {
+    const first = warningCategories[0];
+    smartAlerts.push({
+      id: 'category-warning',
+      severity: 'warning',
+      icon: 'alert-triangle',
+      title: `Category Approaching Cap: ${first.category}`,
+      desc: `${first.category} is at ${first.utilizationPct.toFixed(0)}% (${formatCurrency(
+        first.spent
+      )} of ${formatCurrency(first.limit)}).`,
+    });
+  }
+
   return {
     monthKey,
     monthlyLimit,
@@ -77,47 +176,44 @@ export function calculateBudgetStatus(transactions, budgetConfig, monthKey) {
     utilizationPct,
     status,
     categoryTrackers,
+    dailyBurnRate,
+    projectedSpend,
+    safeDailyAllowance,
+    isCurrentMonth,
+    currentDay,
+    daysInMonth,
+    remainingDays,
+    smartAlerts,
   };
 }
 
 export function renderBudgetAlertBanner(budgetStatus, options = {}) {
   const { showManageAction = false } = options;
-  if (budgetStatus.status !== 'warning' && budgetStatus.status !== 'exceeded') {
+  const alerts = budgetStatus.smartAlerts || [];
+
+  if (alerts.length === 0) {
     return '';
   }
 
-  const isExceeded = budgetStatus.status === 'exceeded';
-  const monthLabel = formatMonthLabel(budgetStatus.monthKey);
-  const pctFormatted = `${budgetStatus.utilizationPct.toFixed(1)}%`;
-
-  const title = isExceeded
-    ? `Monthly budget exceeded for ${monthLabel}`
-    : `Approaching monthly budget limit (${pctFormatted} used)`;
-
-  const desc = isExceeded
-    ? `Spending of ${formatCurrency(budgetStatus.monthlySpent)} has exceeded your ${formatCurrency(
-        budgetStatus.monthlyLimit
-      )} budget by ${formatCurrency(Math.abs(budgetStatus.remaining))}.`
-    : `You have used ${formatCurrency(budgetStatus.monthlySpent)} of your ${formatCurrency(
-        budgetStatus.monthlyLimit
-      )} budget for ${monthLabel}. ${formatCurrency(budgetStatus.remaining)} remains.`;
-
-  return `
-    <div class="status-banner ${isExceeded ? 'is-danger' : 'is-warning'}" role="alert">
-      <div class="status-banner-content">
-        <i data-lucide="${isExceeded ? 'alert-octagon' : 'alert-triangle'}" aria-hidden="true"></i>
-        <div>
-          <div class="status-banner-title">${escapeHtml(title)}</div>
-          <div class="status-banner-desc">${escapeHtml(desc)}</div>
-        </div>
-      </div>
-      ${
-        showManageAction
+  return alerts
+    .map(
+      (alert) => `
+        <div class="status-banner ${alert.severity === 'danger' ? 'is-danger' : 'is-warning'}" role="alert" style="margin-bottom: 14px;">
+          <div class="status-banner-content">
+            <i data-lucide="${escapeHtml(alert.icon)}" aria-hidden="true"></i>
+            <div>
+              <div class="status-banner-title">${escapeHtml(alert.title)}</div>
+              <div class="status-banner-desc">${escapeHtml(alert.desc)}</div>
+            </div>
+          </div>
+          ${showManageAction
           ? `<button type="button" class="btn btn-secondary btn-sm" data-nav-target="budget">Review Budget</button>`
           : ''
-      }
-    </div>
-  `;
+        }
+        </div>
+      `
+    )
+    .join('');
 }
 
 /* ==========================================================================
@@ -133,17 +229,17 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
     status.status === 'exceeded'
       ? 'is-danger'
       : status.status === 'warning'
-      ? 'is-warning'
-      : '';
+        ? 'is-warning'
+        : '';
 
   const statusText =
     status.status === 'exceeded'
       ? 'Budget Exceeded'
       : status.status === 'warning'
-      ? 'Warning: 80%+ Utilized'
-      : status.status === 'normal'
-      ? 'On Track'
-      : 'No Budget Set';
+        ? 'Warning: 80%+ Utilized'
+        : status.status === 'normal'
+          ? 'On Track'
+          : 'No Budget Set';
 
   container.innerHTML = `
     <div class="section-header-row">
@@ -201,21 +297,19 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
             <h3 class="card-title">${escapeHtml(monthLabel)} Utilization</h3>
             <p class="card-subtitle">Live tracking against recorded expenses</p>
           </div>
-          <span class="tabular-nums" style="font-size:12.5px;font-weight:600;color:${
-            status.status === 'exceeded'
-              ? 'var(--danger)'
-              : status.status === 'warning'
-              ? 'var(--warning)'
-              : status.status === 'normal'
-              ? 'var(--success)'
-              : 'var(--text-muted)'
-          };">${escapeHtml(statusText)}</span>
+          <span class="tabular-nums" style="font-size:12.5px;font-weight:600;color:${status.status === 'exceeded'
+      ? 'var(--danger)'
+      : status.status === 'warning'
+        ? 'var(--warning)'
+        : status.status === 'normal'
+          ? 'var(--success)'
+          : 'var(--text-muted)'
+    };">${escapeHtml(statusText)}</span>
         </div>
 
         <div class="card-body">
-          ${
-            status.monthlyLimit > 0
-              ? `
+          ${status.monthlyLimit > 0
+      ? `
                 <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
                   <span style="font-size:13px;color:var(--text-secondary);">Utilization Rate</span>
                   <span class="mono-num" style="font-size:20px;font-weight:700;">
@@ -223,8 +317,8 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
                   </span>
                 </div>
                 <div class="progress-track is-lg" role="progressbar" aria-valuenow="${Math.round(
-                  status.utilizationPct
-                )}" aria-valuemin="0" aria-valuemax="100">
+        status.utilizationPct
+      )}" aria-valuemin="0" aria-valuemax="100">
                   <div class="progress-fill ${barClass}" style="width: ${clampedWidth}%"></div>
                 </div>
 
@@ -232,39 +326,36 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
                   <div>
                     <div class="budget-stat-label">Monthly Budget</div>
                     <div class="budget-stat-value tabular-nums">${formatCurrency(
-                      status.monthlyLimit
-                    )}</div>
+        status.monthlyLimit
+      )}</div>
                   </div>
                   <div>
                     <div class="budget-stat-label">Monthly Spent</div>
                     <div class="budget-stat-value tabular-nums">${formatCurrency(
-                      status.monthlySpent
-                    )}</div>
+        status.monthlySpent
+      )}</div>
                   </div>
                   <div>
-                    <div class="budget-stat-label">${
-                      status.remaining >= 0 ? 'Remaining' : 'Over Budget'
-                    }</div>
-                    <div class="budget-stat-value tabular-nums" style="color:${
-                      status.remaining >= 0 ? 'var(--success)' : 'var(--danger)'
-                    }">
+                    <div class="budget-stat-label">${status.remaining >= 0 ? 'Remaining' : 'Over Budget'
+      }</div>
+                    <div class="budget-stat-value tabular-nums" style="color:${status.remaining >= 0 ? 'var(--success)' : 'var(--danger)'
+      }">
                       ${formatCurrency(Math.abs(status.remaining))}
                     </div>
                   </div>
                 </div>
                 <p style="font-size:12.5px;color:var(--text-muted);">
-                  ${
-                    status.remaining >= 0
-                      ? `You can spend up to ${formatCurrency(
-                          status.remaining
-                        )} more in ${escapeHtml(monthLabel)} before reaching your limit.`
-                      : `Expenses have exceeded your ${formatCurrency(
-                          status.monthlyLimit
-                        )} target by ${formatCurrency(Math.abs(status.remaining))}.`
-                  }
+                  ${status.remaining >= 0
+        ? `You can spend up to ${formatCurrency(
+          status.remaining
+        )} more in ${escapeHtml(monthLabel)} before reaching your limit.`
+        : `Expenses have exceeded your ${formatCurrency(
+          status.monthlyLimit
+        )} target by ${formatCurrency(Math.abs(status.remaining))}.`
+      }
                 </p>
               `
-              : `
+      : `
                 <div class="empty-state" style="padding:28px 16px;">
                   <div class="empty-state-icon">
                     <i data-lucide="wallet" aria-hidden="true"></i>
@@ -275,7 +366,7 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
                   </p>
                 </div>
               `
-          }
+    }
         </div>
       </div>
     </div>
@@ -291,22 +382,22 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
       <form id="category-budgets-form" class="card-body">
         <div class="category-budget-list">
           ${EXPENSE_CATEGORIES.map((category) => {
-            const tracker = status.categoryTrackers.find((t) => t.category === category) || {
-              category,
-              spent: 0,
-              limit: Number(budgetConfig?.categoryLimits?.[category]) || 0,
-              utilizationPct: 0,
-              status: 'unset',
-            };
-            const width = tracker.limit > 0 ? Math.min(100, tracker.utilizationPct).toFixed(1) : 0;
-            const fillCls =
-              tracker.status === 'exceeded'
-                ? 'is-danger'
-                : tracker.status === 'warning'
-                ? 'is-warning'
-                : '';
+      const tracker = status.categoryTrackers.find((t) => t.category === category) || {
+        category,
+        spent: 0,
+        limit: Number(budgetConfig?.categoryLimits?.[category]) || 0,
+        utilizationPct: 0,
+        status: 'unset',
+      };
+      const width = tracker.limit > 0 ? Math.min(100, tracker.utilizationPct).toFixed(1) : 0;
+      const fillCls =
+        tracker.status === 'exceeded'
+          ? 'is-danger'
+          : tracker.status === 'warning'
+            ? 'is-warning'
+            : '';
 
-            return `
+      return `
               <div class="category-budget-row">
                 <div class="category-budget-top">
                   <div class="breakdown-name-wrap">
@@ -315,11 +406,10 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
                   </div>
                   <span class="tabular-nums" style="color:var(--text-secondary);">
                     Spent: <strong>${formatCurrency(tracker.spent)}</strong>
-                    ${
-                      tracker.limit > 0
-                        ? ` / ${formatCurrency(tracker.limit)} (${tracker.utilizationPct.toFixed(0)}%)`
-                        : ' (No cap)'
-                    }
+                    ${tracker.limit > 0
+          ? ` / ${formatCurrency(tracker.limit)} (${tracker.utilizationPct.toFixed(0)}%)`
+          : ' (No cap)'
+        }
                   </span>
                 </div>
                 <div class="category-budget-input-row">
@@ -343,7 +433,7 @@ export function renderBudgetView(container, transactions, budgetConfig, activeMo
                 </div>
               </div>
             `;
-          }).join('')}
+    }).join('')}
         </div>
         <div style="margin-top:18px;display:flex;justify-content:flex-end;">
           <button type="submit" class="btn btn-secondary btn-sm">Save Category Limits</button>

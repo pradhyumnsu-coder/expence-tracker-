@@ -249,6 +249,22 @@
             <p class="form-error" id="error-tx-description" role="alert"></p>
           </div>
 
+          <!-- Smart Budget Pre-Transaction Impact Alert -->
+          <div
+            id="tx-budget-impact-banner"
+            class="status-banner is-warning"
+            style="display: none; margin-top: 8px; margin-bottom: 4px;"
+            role="status"
+          >
+            <div class="status-banner-content">
+              <i id="tx-budget-impact-icon" data-lucide="alert-triangle" aria-hidden="true"></i>
+              <div>
+                <div class="status-banner-title" id="tx-budget-impact-title">Budget Alert</div>
+                <div class="status-banner-desc" id="tx-budget-impact-desc"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="transaction-modal-cancel">
               Cancel

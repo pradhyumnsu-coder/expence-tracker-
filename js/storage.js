@@ -3,15 +3,17 @@
  * ---------------------------------------------------------------------------
  * Centralized data persistence module for ClearLedger.
  *
- * Currently backed by browser LocalStorage. Designed as a clean repository
- * boundary so every function can be swapped to async REST API calls
- * (Node.js + Express.js + SQL) without changing UI or calculation modules.
+ * Backed by REST API calls to the Node.js + Express + SQLite backend.
+ * Uses relative API base (/api) sharing the same host and port.
  */
+
+const API_BASE = '/api';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: 'clearledger_transactions_v1',
   BUDGET: 'clearledger_budget_v1',
   INITIALIZED: 'clearledger_initialized_v1',
+  MIGRATED: 'clearledger_migrated_v1',
 };
 
 export const EXPENSE_CATEGORIES = [
@@ -142,7 +144,7 @@ function shiftMonth(monthKey, deltaMonths) {
   return `${yy}-${mm}`;
 }
 
-function buildSeedTransactions() {
+export function buildSeedTransactions() {
   const m0 = getCurrentMonthKey();
   const m1 = shiftMonth(m0, -1);
   const m2 = shiftMonth(m0, -2);
@@ -151,9 +153,7 @@ function buildSeedTransactions() {
   const m5 = shiftMonth(m0, -5);
 
   return [
-    // Current month
     {
-      id: 'tx_seed_01',
       title: 'Monthly Salary',
       amount: 5400.0,
       category: 'Salary',
@@ -162,7 +162,6 @@ function buildSeedTransactions() {
       description: 'Primary engineering payroll deposit',
     },
     {
-      id: 'tx_seed_02',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -171,7 +170,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_03',
       title: 'Grocery Shopping',
       amount: 285.4,
       category: 'Food',
@@ -180,7 +178,6 @@ function buildSeedTransactions() {
       description: 'Weekly groceries and household staples',
     },
     {
-      id: 'tx_seed_04',
       title: 'UI Consulting Retainer',
       amount: 850.0,
       category: 'Freelance',
@@ -189,7 +186,6 @@ function buildSeedTransactions() {
       description: 'Design system audit milestone',
     },
     {
-      id: 'tx_seed_05',
       title: 'Electric & Fiber Internet',
       amount: 164.2,
       category: 'Utilities',
@@ -198,7 +194,6 @@ function buildSeedTransactions() {
       description: 'Monthly power and gigabit broadband',
     },
     {
-      id: 'tx_seed_06',
       title: 'Metro Pass & Fuel',
       amount: 138.0,
       category: 'Transportation',
@@ -207,7 +202,6 @@ function buildSeedTransactions() {
       description: 'Commuter transit pass and refueling',
     },
     {
-      id: 'tx_seed_07',
       title: 'Pharmacy & Dental Checkup',
       amount: 145.0,
       category: 'Healthcare',
@@ -216,7 +210,6 @@ function buildSeedTransactions() {
       description: 'Routine dental cleaning copay',
     },
     {
-      id: 'tx_seed_08',
       title: 'Whole Foods Market',
       amount: 196.8,
       category: 'Food',
@@ -225,7 +218,6 @@ function buildSeedTransactions() {
       description: 'Fresh produce and dinner prep',
     },
     {
-      id: 'tx_seed_09',
       title: 'Streaming & Books',
       amount: 72.5,
       category: 'Entertainment',
@@ -233,9 +225,7 @@ function buildSeedTransactions() {
       date: `${m0}-13`,
       description: 'Monthly media subscriptions and technical book',
     },
-    // Month -1
     {
-      id: 'tx_seed_10',
       title: 'Monthly Salary',
       amount: 5400.0,
       category: 'Salary',
@@ -244,7 +234,6 @@ function buildSeedTransactions() {
       description: 'Primary engineering payroll deposit',
     },
     {
-      id: 'tx_seed_11',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -253,7 +242,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_12',
       title: 'Groceries & Dining',
       amount: 512.3,
       category: 'Food',
@@ -262,7 +250,6 @@ function buildSeedTransactions() {
       description: 'Monthly food and dining expenses',
     },
     {
-      id: 'tx_seed_13',
       title: 'Winter Jacket & Essentials',
       amount: 240.0,
       category: 'Shopping',
@@ -271,7 +258,6 @@ function buildSeedTransactions() {
       description: 'Seasonal wardrobe replacement',
     },
     {
-      id: 'tx_seed_14',
       title: 'Utilities Bundle',
       amount: 158.9,
       category: 'Utilities',
@@ -280,7 +266,6 @@ function buildSeedTransactions() {
       description: 'Water, electric, and internet',
     },
     {
-      id: 'tx_seed_15',
       title: 'Dividend Payout',
       amount: 320.0,
       category: 'Investments',
@@ -288,9 +273,7 @@ function buildSeedTransactions() {
       date: `${m1}-24`,
       description: 'Quarterly index ETF distribution',
     },
-    // Month -2
     {
-      id: 'tx_seed_16',
       title: 'Monthly Salary',
       amount: 5400.0,
       category: 'Salary',
@@ -299,7 +282,6 @@ function buildSeedTransactions() {
       description: 'Primary engineering payroll deposit',
     },
     {
-      id: 'tx_seed_17',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -308,7 +290,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_18',
       title: 'Weekend Rail Trip',
       amount: 390.0,
       category: 'Travel',
@@ -317,7 +298,6 @@ function buildSeedTransactions() {
       description: 'Train tickets and hotel stay',
     },
     {
-      id: 'tx_seed_19',
       title: 'Groceries',
       amount: 465.0,
       category: 'Food',
@@ -325,9 +305,7 @@ function buildSeedTransactions() {
       date: `${m2}-18`,
       description: 'Supermarket runs',
     },
-    // Month -3
     {
-      id: 'tx_seed_20',
       title: 'Monthly Salary',
       amount: 5200.0,
       category: 'Salary',
@@ -336,7 +314,6 @@ function buildSeedTransactions() {
       description: 'Primary payroll deposit',
     },
     {
-      id: 'tx_seed_21',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -345,7 +322,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_22',
       title: 'Online Course Subscription',
       amount: 199.0,
       category: 'Education',
@@ -354,7 +330,6 @@ function buildSeedTransactions() {
       description: 'Systems architecture workshop',
     },
     {
-      id: 'tx_seed_23',
       title: 'Groceries & Transit',
       amount: 615.0,
       category: 'Food',
@@ -362,9 +337,7 @@ function buildSeedTransactions() {
       date: `${m3}-19`,
       description: 'Monthly groceries and local transit',
     },
-    // Month -4
     {
-      id: 'tx_seed_24',
       title: 'Monthly Salary',
       amount: 5200.0,
       category: 'Salary',
@@ -373,7 +346,6 @@ function buildSeedTransactions() {
       description: 'Primary payroll deposit',
     },
     {
-      id: 'tx_seed_25',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -382,7 +354,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_26',
       title: 'Food & Utilities',
       amount: 680.0,
       category: 'Food',
@@ -390,9 +361,7 @@ function buildSeedTransactions() {
       date: `${m4}-15`,
       description: 'Groceries and summer electric bill',
     },
-    // Month -5
     {
-      id: 'tx_seed_27',
       title: 'Monthly Salary',
       amount: 5200.0,
       category: 'Salary',
@@ -401,7 +370,6 @@ function buildSeedTransactions() {
       description: 'Primary payroll deposit',
     },
     {
-      id: 'tx_seed_28',
       title: 'Apartment Rent',
       amount: 1450.0,
       category: 'Housing',
@@ -410,7 +378,6 @@ function buildSeedTransactions() {
       description: 'Monthly lease payment',
     },
     {
-      id: 'tx_seed_29',
       title: 'Groceries & Supplies',
       amount: 540.0,
       category: 'Food',
@@ -421,7 +388,7 @@ function buildSeedTransactions() {
   ];
 }
 
-function buildDefaultBudget() {
+export function buildDefaultBudget() {
   return {
     monthlyLimit: 3200,
     categoryLimits: {
@@ -436,176 +403,341 @@ function buildDefaultBudget() {
   };
 }
 
-function safeReadJSON(key, fallback) {
+/* ==========================================================================
+   REST API Client Helpers
+   ========================================================================== */
+
+async function apiRequest(endpoint, options = {}) {
+  const url = `${API_BASE}${endpoint}`;
+  let response;
   try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
+    response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    });
+  } catch (netErr) {
+    throw new Error('Failed to connect to the backend server. Is it running?');
+  }
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (jsonErr) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const errorMsg = data && data.error ? data.error : `Request failed with status ${response.status}`;
+    const error = new Error(errorMsg);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+
+  return data;
+}
+
+/* ==========================================================================
+   One-Time LocalStorage to SQLite Migration (Requirement 27 & 28)
+   ========================================================================== */
+
+export async function initializeStorage() {
+  const isMigrated = window.localStorage.getItem(STORAGE_KEYS.MIGRATED);
+  if (isMigrated === 'true') {
+    return { migrated: false, count: 0 };
+  }
+
+  let importedCount = 0;
+  try {
+    const rawTxs = window.localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+    let localTxs = [];
+    if (rawTxs) {
+      try {
+        localTxs = JSON.parse(rawTxs);
+      } catch (e) {
+        localTxs = [];
+      }
+    }
+
+    // If local storage has transactions, import them via POST /api/transactions
+    if (Array.isArray(localTxs) && localTxs.length > 0) {
+      for (const item of localTxs) {
+        await saveTransaction({
+          title: item.title,
+          amount: item.amount,
+          category: item.category,
+          type: item.type,
+          date: item.date,
+          description: item.description,
+        });
+        importedCount += 1;
+      }
+    }
+
+    // If local storage has budget, import it via POST /api/budgets
+    const rawBudget = window.localStorage.getItem(STORAGE_KEYS.BUDGET);
+    if (rawBudget) {
+      try {
+        const localBudget = JSON.parse(rawBudget);
+        if (localBudget && Number(localBudget.monthlyLimit) > 0) {
+          const mKey = getCurrentMonthKey();
+          await saveBudget(
+            {
+              monthlyLimit: Number(localBudget.monthlyLimit),
+              categoryLimits: localBudget.categoryLimits || {},
+            },
+            mKey
+          );
+        }
+      } catch (bErr) {
+        console.warn('Failed to migrate local budget:', bErr);
+      }
+    }
+
+    // Set migration flag so this never runs twice. Original LocalStorage is NOT deleted (kept as backup).
+    window.localStorage.setItem(STORAGE_KEYS.MIGRATED, 'true');
+    console.log(`[ClearLedger Migration] Successfully imported ${importedCount} transaction(s) into database.`);
+    return { migrated: true, count: importedCount };
   } catch (err) {
-    console.error(`Failed to parse LocalStorage key "${key}":`, err);
-    return fallback;
+    console.error('[ClearLedger Migration] Migration encountered an error:', err);
+    return { migrated: false, count: importedCount, error: err };
   }
 }
 
-function safeWriteJSON(key, value) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (err) {
-    console.error(`Failed to write LocalStorage key "${key}":`, err);
-    return false;
-  }
-}
+/* ==========================================================================
+   CRUD Operations (Backed by REST API)
+   ========================================================================== */
 
 /**
- * Ensures initial sample data exists on first load only.
- * If a user deletes all transactions later, the empty state is respected.
+ * Retrieve all transactions (newest first).
+ * REST endpoint: GET /api/transactions
  */
-export function initializeStorage() {
-  const initialized = window.localStorage.getItem(STORAGE_KEYS.INITIALIZED);
-  if (!initialized) {
-    safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, buildSeedTransactions());
-    safeWriteJSON(STORAGE_KEYS.BUDGET, buildDefaultBudget());
-    window.localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
-  }
-}
-
-/**
- * Retrieve all transactions.
- * Future REST endpoint: GET /api/transactions
- * @returns {Array<Object>}
- */
-export function getTransactions() {
-  initializeStorage();
-  const data = safeReadJSON(STORAGE_KEYS.TRANSACTIONS, []);
-  return Array.isArray(data) ? data : [];
+export async function getTransactions() {
+  const response = await apiRequest('/transactions');
+  return Array.isArray(response.data) ? response.data : [];
 }
 
 /**
  * Save a new transaction.
- * Future REST endpoint: POST /api/transactions
- * @param {Object} txInput
- * @returns {Object} Saved transaction record
+ * REST endpoint: POST /api/transactions
  */
-export function saveTransaction(txInput) {
-  const list = getTransactions();
-  const newTx = {
-    id: txInput.id || generateId(),
+export async function saveTransaction(txInput) {
+  const payload = {
     title: String(txInput.title || '').trim(),
     amount: Number(txInput.amount),
-    category: String(txInput.category || 'Other'),
+    category: String(txInput.category || 'Other').trim(),
     type: txInput.type === 'income' ? 'income' : 'expense',
-    date: String(txInput.date || getTodayISO()),
+    date: String(txInput.date || getTodayISO()).trim(),
     description: String(txInput.description || '').trim(),
   };
-  list.push(newTx);
-  safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, list);
-  return newTx;
+
+  const response = await apiRequest('/transactions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return response.data;
 }
 
 /**
  * Update an existing transaction by ID.
- * Future REST endpoint: PUT /api/transactions/:id
- * @param {string} id
- * @param {Object} updates
- * @returns {Object|null}
+ * REST endpoint: PUT /api/transactions/:id
  */
-export function updateTransaction(id, updates) {
-  const list = getTransactions();
-  const index = list.findIndex((item) => item.id === id);
-  if (index === -1) return null;
-
-  const updated = {
-    ...list[index],
-    title: updates.title !== undefined ? String(updates.title).trim() : list[index].title,
-    amount: updates.amount !== undefined ? Number(updates.amount) : list[index].amount,
-    category: updates.category !== undefined ? String(updates.category) : list[index].category,
-    type: updates.type === 'income' || updates.type === 'expense' ? updates.type : list[index].type,
-    date: updates.date !== undefined ? String(updates.date) : list[index].date,
-    description:
-      updates.description !== undefined
-        ? String(updates.description).trim()
-        : list[index].description,
+export async function updateTransaction(id, updates) {
+  const payload = {
+    title: updates.title !== undefined ? String(updates.title).trim() : undefined,
+    amount: updates.amount !== undefined ? Number(updates.amount) : undefined,
+    category: updates.category !== undefined ? String(updates.category).trim() : undefined,
+    type: updates.type === 'income' || updates.type === 'expense' ? updates.type : undefined,
+    date: updates.date !== undefined ? String(updates.date).trim() : undefined,
+    description: updates.description !== undefined ? String(updates.description).trim() : undefined,
   };
 
-  list[index] = updated;
-  safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, list);
-  return updated;
+  const response = await apiRequest(`/transactions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+  return response.data;
 }
 
 /**
  * Delete a transaction by ID.
- * Future REST endpoint: DELETE /api/transactions/:id
- * @param {string} id
- * @returns {boolean}
+ * REST endpoint: DELETE /api/transactions/:id
  */
-export function deleteTransaction(id) {
-  const list = getTransactions();
-  const filtered = list.filter((item) => item.id !== id);
-  if (filtered.length === list.length) return false;
-  safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, filtered);
-  return true;
+export async function deleteTransaction(id) {
+  const response = await apiRequest(`/transactions/${id}`, {
+    method: 'DELETE',
+  });
+  return response.success === true;
 }
 
 /**
- * Retrieve budget configuration.
- * Future REST endpoint: GET /api/budget
- * @returns {{ monthlyLimit: number, categoryLimits: Object, updatedAt: string }}
+ * Retrieve budget configuration for a specific month (YYYY-MM).
+ * REST endpoint: GET /api/budgets/:year/:month
  */
-export function getBudget() {
-  initializeStorage();
-  const budget = safeReadJSON(STORAGE_KEYS.BUDGET, null);
-  if (!budget || typeof budget !== 'object') {
-    return buildDefaultBudget();
+export async function getBudget(monthKey = getCurrentMonthKey()) {
+  const [year, month] = monthKey.split('-').map(Number);
+  try {
+    const response = await apiRequest(`/budgets/${year}/${month}`);
+    if (response && response.data) {
+      return {
+        id: response.data.id,
+        monthlyLimit: Number(response.data.amount) || 0,
+        categoryLimits: response.data.category_limits || {},
+        updatedAt: response.data.created_at || getTodayISO(),
+      };
+    }
+  } catch (err) {
+    if (err.status === 404) {
+      return {
+        id: null,
+        monthlyLimit: 0,
+        categoryLimits: {},
+        updatedAt: getTodayISO(),
+      };
+    }
+    throw err;
   }
+
   return {
-    monthlyLimit: Number(budget.monthlyLimit) || 0,
-    categoryLimits:
-      budget.categoryLimits && typeof budget.categoryLimits === 'object'
-        ? budget.categoryLimits
-        : {},
-    updatedAt: budget.updatedAt || getTodayISO(),
-  };
-}
-
-/**
- * Save budget configuration.
- * Future REST endpoint: PUT /api/budget
- * @param {Object} budgetInput
- * @returns {Object}
- */
-export function saveBudget(budgetInput) {
-  const current = getBudget();
-  const next = {
-    monthlyLimit: Math.max(0, Number(budgetInput.monthlyLimit) || 0),
-    categoryLimits:
-      budgetInput.categoryLimits !== undefined
-        ? budgetInput.categoryLimits
-        : current.categoryLimits,
-    updatedAt: getTodayISO(),
-  };
-  safeWriteJSON(STORAGE_KEYS.BUDGET, next);
-  return next;
-}
-
-/**
- * Clear all user transactions and reset budget to 0 (for testing Empty State).
- */
-export function clearAllData() {
-  safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, []);
-  safeWriteJSON(STORAGE_KEYS.BUDGET, {
+    id: null,
     monthlyLimit: 0,
     categoryLimits: {},
     updatedAt: getTodayISO(),
-  });
-  window.localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+  };
 }
 
 /**
- * Restore realistic sample ledger data.
+ * Retrieve smart budget alerts and spending pace forecasts.
+ * REST endpoint: GET /api/budgets/:year/:month/alerts
  */
-export function resetToSampleData() {
-  safeWriteJSON(STORAGE_KEYS.TRANSACTIONS, buildSeedTransactions());
-  safeWriteJSON(STORAGE_KEYS.BUDGET, buildDefaultBudget());
-  window.localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+export async function getBudgetSmartAlerts(monthKey = getCurrentMonthKey()) {
+  const [year, month] = monthKey.split('-').map(Number);
+  try {
+    const response = await apiRequest(`/budgets/${year}/${month}/alerts`);
+    return response.data || null;
+  } catch (err) {
+    console.warn('[storage] Failed to fetch smart alerts:', err);
+    return null;
+  }
+}
+
+/**
+ * Save budget configuration for a specific month.
+ * REST endpoint: POST /api/budgets or PUT /api/budgets/:id
+ */
+export async function saveBudget(budgetInput, monthKey = getCurrentMonthKey()) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const current = await getBudget(monthKey);
+
+  const nextLimit =
+    budgetInput.monthlyLimit !== undefined
+      ? Math.max(0, Number(budgetInput.monthlyLimit) || 0)
+      : current.monthlyLimit;
+
+  const nextCategoryLimits =
+    budgetInput.categoryLimits !== undefined
+      ? budgetInput.categoryLimits
+      : current.categoryLimits;
+
+  if (current.id) {
+    const response = await apiRequest(`/budgets/${current.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        year,
+        month,
+        amount: Math.max(0.01, nextLimit),
+        category_limits: nextCategoryLimits,
+      }),
+    });
+    return {
+      id: response.data.id,
+      monthlyLimit: Number(response.data.amount) || 0,
+      categoryLimits: response.data.category_limits || {},
+      updatedAt: response.data.created_at || getTodayISO(),
+    };
+  } else {
+    const response = await apiRequest('/budgets', {
+      method: 'POST',
+      body: JSON.stringify({
+        year,
+        month,
+        amount: Math.max(0.01, nextLimit),
+        category_limits: nextCategoryLimits,
+      }),
+    });
+    return {
+      id: response.data.id,
+      monthlyLimit: Number(response.data.amount) || 0,
+      categoryLimits: response.data.category_limits || {},
+      updatedAt: response.data.created_at || getTodayISO(),
+    };
+  }
+}
+
+/**
+ * Clear all user transactions and reset budget to 0.
+ */
+export async function clearAllData(monthKey = getCurrentMonthKey()) {
+  const transactions = await getTransactions();
+  for (const tx of transactions) {
+    await deleteTransaction(tx.id);
+  }
+
+  const current = await getBudget(monthKey);
+  if (current.id) {
+    await apiRequest(`/budgets/${current.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        amount: 0.01,
+        category_limits: {},
+      }),
+    }).catch(() => { });
+  }
+}
+
+/**
+ * Restore sample ledger data.
+ */
+export async function resetToSampleData() {
+  const currentTxs = await getTransactions();
+  for (const tx of currentTxs) {
+    await deleteTransaction(tx.id);
+  }
+
+  const seeds = buildSeedTransactions();
+  for (const item of seeds) {
+    await saveTransaction(item);
+  }
+
+  const m0 = getCurrentMonthKey();
+  const [y, m] = m0.split('-').map(Number);
+  const defBudget = buildDefaultBudget();
+  const existingBudget = await getBudget(m0);
+
+  if (existingBudget.id) {
+    await apiRequest(`/budgets/${existingBudget.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        year: y,
+        month: m,
+        amount: defBudget.monthlyLimit,
+        category_limits: defBudget.categoryLimits,
+      }),
+    });
+  } else {
+    await apiRequest('/budgets', {
+      method: 'POST',
+      body: JSON.stringify({
+        year: y,
+        month: m,
+        amount: defBudget.monthlyLimit,
+        category_limits: defBudget.categoryLimits,
+      }),
+    });
+  }
 }

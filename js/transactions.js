@@ -104,7 +104,7 @@ export function sortTransactions(transactions, sortBy = 'date-desc') {
       case 'date-desc':
       default: {
         const cmp = b.date.localeCompare(a.date);
-        return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
+        return cmp !== 0 ? cmp : String(b.id).localeCompare(String(a.id));
       }
     }
   });
@@ -479,7 +479,7 @@ function renderTableContent(filtered, totalCount, dateSortNext, amountSortNext, 
    Add / Edit Transaction Modal Controller
    ========================================================================== */
 
-export function createTransactionModalController(onSubmitSuccess) {
+export function createTransactionModalController(onSubmitSuccess, getBudgetAlertContext) {
   const modal = document.getElementById('transaction-modal');
   const form = document.getElementById('transaction-form');
   const titleEl = document.getElementById('transaction-modal-title');
@@ -494,6 +494,102 @@ export function createTransactionModalController(onSubmitSuccess) {
   const categorySelect = document.getElementById('tx-category');
   const dateInput = document.getElementById('tx-date');
   const descriptionInput = document.getElementById('tx-description');
+
+  const budgetImpactBanner = document.getElementById('tx-budget-impact-banner');
+  const budgetImpactTitle = document.getElementById('tx-budget-impact-title');
+  const budgetImpactDesc = document.getElementById('tx-budget-impact-desc');
+
+  function updateBudgetImpactWarning() {
+    if (!budgetImpactBanner || !budgetImpactTitle || !budgetImpactDesc) return;
+
+    if (typeInput.value !== 'expense' || !amountInput.value) {
+      budgetImpactBanner.style.display = 'none';
+      return;
+    }
+
+    const amount = Number(amountInput.value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      budgetImpactBanner.style.display = 'none';
+      return;
+    }
+
+    if (typeof getBudgetAlertContext !== 'function') {
+      budgetImpactBanner.style.display = 'none';
+      return;
+    }
+
+    const context = getBudgetAlertContext();
+    if (!context || !context.budgetConfig) {
+      budgetImpactBanner.style.display = 'none';
+      return;
+    }
+
+    const { transactions = [], budgetConfig = {} } = context;
+    const currentMonth = (dateInput.value || getTodayISO()).slice(0, 7);
+    const monthlyLimit = Number(budgetConfig.monthlyLimit) || 0;
+    const categoryLimits = budgetConfig.categoryLimits || {};
+    const selectedCategory = categorySelect.value || 'Other';
+    const categoryLimit = Number(categoryLimits[selectedCategory]) || 0;
+
+    const currentEditingId = idInput.value;
+    const otherExpenses = transactions.filter(
+      (t) =>
+        t.type === 'expense' &&
+        t.date &&
+        t.date.slice(0, 7) === currentMonth &&
+        String(t.id) !== String(currentEditingId)
+    );
+
+    const currentMonthlySpent = otherExpenses.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const currentCatSpent = otherExpenses
+      .filter((t) => t.category === selectedCategory)
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+    const newMonthlySpent = currentMonthlySpent + amount;
+    const newCatSpent = currentCatSpent + amount;
+
+    // 1. Check category breach
+    if (categoryLimit > 0 && newCatSpent > categoryLimit) {
+      const over = newCatSpent - categoryLimit;
+      budgetImpactBanner.className = 'status-banner is-danger';
+      budgetImpactTitle.textContent = `Category Limit Exceeded: ${selectedCategory}`;
+      budgetImpactDesc.textContent = `This expense pushes ${selectedCategory} to ${formatCurrency(newCatSpent)}, exceeding the ${formatCurrency(categoryLimit)} cap by ${formatCurrency(over)}.`;
+      budgetImpactBanner.style.display = 'flex';
+      return;
+    }
+
+    // 2. Check overall monthly budget breach
+    if (monthlyLimit > 0 && newMonthlySpent > monthlyLimit) {
+      const over = newMonthlySpent - monthlyLimit;
+      budgetImpactBanner.className = 'status-banner is-danger';
+      budgetImpactTitle.textContent = 'Monthly Budget Will Be Exceeded';
+      budgetImpactDesc.textContent = `This entry pushes total spending to ${formatCurrency(newMonthlySpent)}, exceeding your ${formatCurrency(monthlyLimit)} budget by ${formatCurrency(over)}.`;
+      budgetImpactBanner.style.display = 'flex';
+      return;
+    }
+
+    // 3. Check 80%+ warning
+    if (monthlyLimit > 0 && newMonthlySpent >= monthlyLimit * 0.8) {
+      const pct = ((newMonthlySpent / monthlyLimit) * 100).toFixed(0);
+      budgetImpactBanner.className = 'status-banner is-warning';
+      budgetImpactTitle.textContent = `Approaching Monthly Budget (${pct}% Used)`;
+      budgetImpactDesc.textContent = `Total spending will reach ${formatCurrency(newMonthlySpent)} of your ${formatCurrency(monthlyLimit)} limit (${formatCurrency(monthlyLimit - newMonthlySpent)} remaining).`;
+      budgetImpactBanner.style.display = 'flex';
+      return;
+    }
+
+    // 4. Check category 80%+ warning
+    if (categoryLimit > 0 && newCatSpent >= categoryLimit * 0.8) {
+      const pct = ((newCatSpent / categoryLimit) * 100).toFixed(0);
+      budgetImpactBanner.className = 'status-banner is-warning';
+      budgetImpactTitle.textContent = `Approaching ${selectedCategory} Cap (${pct}% Used)`;
+      budgetImpactDesc.textContent = `${selectedCategory} spending will reach ${formatCurrency(newCatSpent)} of your ${formatCurrency(categoryLimit)} cap.`;
+      budgetImpactBanner.style.display = 'flex';
+      return;
+    }
+
+    budgetImpactBanner.style.display = 'none';
+  }
 
   const errorEls = {
     title: document.getElementById('error-tx-title'),
@@ -587,6 +683,7 @@ export function createTransactionModalController(onSubmitSuccess) {
     }
 
     modal.hidden = false;
+    updateBudgetImpactWarning();
     window.setTimeout(() => titleInput.focus(), 30);
   }
 
@@ -594,10 +691,21 @@ export function createTransactionModalController(onSubmitSuccess) {
     modal.hidden = true;
     form.reset();
     clearAllErrors();
+    if (budgetImpactBanner) budgetImpactBanner.style.display = 'none';
   }
 
-  typeExpenseBtn.addEventListener('click', () => setTransactionType('expense'));
-  typeIncomeBtn.addEventListener('click', () => setTransactionType('income'));
+  typeExpenseBtn.addEventListener('click', () => {
+    setTransactionType('expense');
+    updateBudgetImpactWarning();
+  });
+  typeIncomeBtn.addEventListener('click', () => {
+    setTransactionType('income');
+    updateBudgetImpactWarning();
+  });
+
+  amountInput?.addEventListener('input', updateBudgetImpactWarning);
+  categorySelect?.addEventListener('change', updateBudgetImpactWarning);
+  dateInput?.addEventListener('change', updateBudgetImpactWarning);
 
   Object.entries(fieldEls).forEach(([key, el]) => {
     el?.addEventListener('input', () => clearFieldError(key));
